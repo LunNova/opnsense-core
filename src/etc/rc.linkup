@@ -35,23 +35,42 @@ require_once("util.inc");
 require_once("system.inc");
 require_once("services.inc");
 
+function should_ignore_hotplug($iface) {
+    global $config;
+
+    // set defaults
+    $ipaddr = '0.0.0.0';
+    $ip6addr = '::';
+    if (isset($config['interfaces'][$iface]['ipaddr'])) {
+        $ipaddr = $config['interfaces'][$iface]['ipaddr'];
+    }
+    if (isset($config['interfaces'][$iface]['ipaddrv6'])) {
+        $ip6addr = $config['interfaces'][$iface]['ipaddrv6'];
+    }
+
+    /* XXX If we have static IPv4 and IPv6 disabled we will still try to handle hotplug events? */
+    if (is_ipaddrv4($ipaddr) && is_ipaddrv6($ip6addr)) {
+        $friendly = convert_friendly_interface_to_friendly_descr($iface);
+        return "Hotplug event {$argument2} detected for {$friendly}({$iface}) but ignoring since interface is configured with static IP ({$ipaddr} {$ip6addr})";
+    }
+
+    if (isset($config['interfaces'][$iface]['ignore_hotplug_events'])) {
+        $friendly = convert_friendly_interface_to_friendly_descr($iface);
+        return "Hotplug event {$argument2} detected for {$friendly}({$iface}) but ignoring as ignore_hotplug_events is set";
+    }
+
+    return false;
+}
+
 function handle_argument_group($iface, $argument2)
 {
     global $config;
 
     if (isset($config['interfaces'][$iface])) {
-        // set defaults
-        $ipaddr = '0.0.0.0';
-        $ip6addr = '::';
-        if (isset($config['interfaces'][$iface]['ipaddr'])) {
-            $ipaddr = $config['interfaces'][$iface]['ipaddr'];
-        }
-        if (isset($config['interfaces'][$iface]['ipaddrv6'])) {
-            $ip6addr = $config['interfaces'][$iface]['ipaddrv6'];
-        }
-        if (is_ipaddrv4($ipaddr) && is_ipaddrv6($ip6addr)) {
-            $friendly = convert_friendly_interface_to_friendly_descr($iface);
-            log_error("Hotplug event detected for {$friendly}({$iface}) but ignoring since interface is configured with static IP ({$ipaddr} {$ip6addr})");
+        $ignore_hotplug_reason = should_ignore_hotplug($iface);
+
+        if ($ignore_hotplug_reason) {
+            log_error($ignore_hotplug_reason);
             interfaces_staticarp_configure($iface);
             /* NOTE: Do not generate event for OpenVPN since the daemon does that for us. */
             if (substr($iface, 0, 4) != "ovpn") {
